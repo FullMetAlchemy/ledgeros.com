@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+# Local Claude Code / editor config (machine-specific paths)
+.claude/
+.vscode/

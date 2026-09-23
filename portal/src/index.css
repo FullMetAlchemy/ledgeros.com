@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: the Tailwind v4 equivalent of `darkMode: 'class'`. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Soft Enterprise Palette. Every value is a Tailwind slate / indigo / rose /
+ * emerald / amber step; no pure black and no heavy navy chrome. Components use
+ * the semantic tokens below, so light/dark swaps in one place and the four
+ * status scales (rating, severity, workflow, deadline) stay distinct.
+ *
+ *   light: app bg slate-50 · cards white · text slate-800/500 · borders slate-200
+ *          primary indigo-600 · errors rose-600 · success emerald-600
+ *   dark:  app bg slate-900 · cards slate-800 · text slate-200/400 · borders slate-700
+ *          primary indigo-500 · errors rose-400 · success emerald-400
+ */
+:root {
+  color-scheme: light;
+
+  --ground: #f8fafc; /* slate-50 */
+  --surface: #ffffff; /* white */
+  --sunk: #f1f5f9; /* slate-100 */
+  --ink: #1e293b; /* slate-800 */
+  --ink-2: #334155; /* slate-700 */
+  --muted: #64748b; /* slate-500 */
+  --faint: #94a3b8; /* slate-400 */
+  --line: #e2e8f0; /* slate-200 */
+  --line-2: #cbd5e1; /* slate-300 */
+  --accent: #4f46e5; /* indigo-600: links, focus */
+  --accent-soft: #eef2ff; /* indigo-50 */
+  --primary: #4f46e5; /* indigo-600: primary buttons */
+  --primary-hover: #4338ca; /* indigo-700 */
+  --on-primary: #ffffff;
+  --on-ink: #ffffff;
+
+  /* App chrome (sidebar, toasts): a card surface, not a dark slab */
+  --shell: #ffffff;
+  --shell-ink: #1e293b;
+  --shell-muted: #64748b;
+  --shell-line: #e2e8f0;
+  --shell-hover: #f1f5f9;
+  --shell-active: #eef2ff;
+  --shell-active-ink: #4338ca;
+
+  /* Critical / High Risk / Overdue: rose */
+  --crit-fg: #e11d48; /* rose-600 */
+  --crit-bg: #fff1f2; /* rose-50 */
+  --crit-bd: #fecdd3; /* rose-200 */
+  --crit-dot: #f43f5e; /* rose-500 */
+  /* Warning / Pending: amber */
+  --warn-fg: #b45309; /* amber-700 (amber-600 is below 4.5:1 for small text) */
+  --warn-bg: #fffbeb; /* amber-50 */
+  --warn-bd: #fde68a; /* amber-200 */
+  --warn-dot: #f59e0b; /* amber-500 */
+  /* Clear / Accepted: emerald */
+  --ok-fg: #059669; /* emerald-600 */
+  --ok-bg: #ecfdf5; /* emerald-50 */
+  --ok-bd: #a7f3d0; /* emerald-200 */
+  --ok-dot: #10b981; /* emerald-500 */
+  /* Workflow status: indigo, never red or green */
+  --flow-fg: #4338ca; /* indigo-700 */
+  --flow-bg: #eef2ff; /* indigo-50 */
+  --flow-bd: #c7d2fe; /* indigo-200 */
+  --flow-dot: #6366f1; /* indigo-500 */
+  --neu-fg: #475569; /* slate-600 */
+  --neu-bg: #f1f5f9; /* slate-100 */
+  --neu-bd: #e2e8f0; /* slate-200 */
+  --neu-dot: #94a3b8; /* slate-400 */
+  /* Severity tags (solid, white text) */
+  --sev-critical: #e11d48; /* rose-600 */
+  --sev-high: #be123c; /* rose-700 */
+  --sev-medium: #b45309; /* amber-700 */
+  --sev-low: #64748b; /* slate-500 */
+
+  /* Chart series (validated with the dataviz palette checker, light surface) */
+  --chart-1: #6366f1;
+  --chart-2: #0d9488;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --ground: #0f172a; /* slate-900 */
+  --surface: #1e293b; /* slate-800 */
+  --sunk: #172033; /* between slate-900 and slate-800 */
+  --ink: #e2e8f0; /* slate-200 */
+  --ink-2: #cbd5e1; /* slate-300 */
+  --muted: #94a3b8; /* slate-400 */
+  --faint: #64748b; /* slate-500 */
+  --line: #334155; /* slate-700 */
+  --line-2: #475569; /* slate-600 */
+  --accent: #a5b4fc; /* indigo-300 for links on slate-800 */
+  --accent-soft: rgba(99, 102, 241, 0.16);
+  --primary: #6366f1; /* indigo-500 */
+  --primary-hover: #818cf8; /* indigo-400 */
+  --on-primary: #ffffff;
+  --on-ink: #0f172a;
+
+  --shell: #1e293b;
+  --shell-ink: #e2e8f0;
+  --shell-muted: #94a3b8;
+  --shell-line: #334155;
+  --shell-hover: rgba(148, 163, 184, 0.1);
+  --shell-active: rgba(99, 102, 241, 0.18);
+  --shell-active-ink: #c7d2fe;
+
+  --crit-fg: #fb7185; /* rose-400 */
+  --crit-bg: rgba(244, 63, 94, 0.12);
+  --crit-bd: rgba(244, 63, 94, 0.35);
+  --crit-dot: #fb7185;
+  --warn-fg: #fbbf24; /* amber-400 */
+  --warn-bg: rgba(245, 158, 11, 0.12);
+  --warn-bd: rgba(245, 158, 11, 0.35);
+  --warn-dot: #fbbf24;
+  --ok-fg: #34d399; /* emerald-400 */
+  --ok-bg: rgba(16, 185, 129, 0.12);
+  --ok-bd: rgba(16, 185, 129, 0.35);
+  --ok-dot: #34d399;
+  --flow-fg: #a5b4fc; /* indigo-300 */
+  --flow-bg: rgba(99, 102, 241, 0.14);
+  --flow-bd: rgba(99, 102, 241, 0.4);
+  --flow-dot: #818cf8;
+  --neu-fg: #cbd5e1;
+  --neu-bg: rgba(148, 163, 184, 0.12);
+  --neu-bd: #475569;
+  --neu-dot: #64748b;
+  --sev-critical: #e11d48;
+  --sev-high: #be123c;
+  --sev-medium: #b45309;
+  --sev-low: #64748b;
+
+  /* Chart series, stepped for the dark surface (validated separately) */
+  --chart-1: #7c83f3;
+  --chart-2: #0fa596;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-on-ink: var(--on-ink);
+  --color-shell: var(--shell);
+  --color-shell-ink: var(--shell-ink);
+  --color-shell-muted: var(--shell-muted);
+  --color-shell-line: var(--shell-line);
+  --color-shell-hover: var(--shell-hover);
+  --color-shell-active: var(--shell-active);
+  --color-shell-active-ink: var(--shell-active-ink);
+
+  --color-crit-fg: var(--crit-fg);
+  --color-crit-bg: var(--crit-bg);
+  --color-crit-bd: var(--crit-bd);
+  --color-crit-dot: var(--crit-dot);
+  --color-warn-fg: var(--warn-fg);
+  --color-warn-bg: var(--warn-bg);
+  --color-warn-bd: var(--warn-bd);
+  --color-warn-dot: var(--warn-dot);
+  --color-ok-fg: var(--ok-fg);
+  --color-ok-bg: var(--ok-bg);
+  --color-ok-bd: var(--ok-bd);
+  --color-ok-dot: var(--ok-dot);
+  --color-flow-fg: var(--flow-fg);
+  --color-flow-bg: var(--flow-bg);
+  --color-flow-bd: var(--flow-bd);
+  --color-flow-dot: var(--flow-dot);
+  --color-neu-fg: var(--neu-fg);
+  --color-neu-bg: var(--neu-bg);
+  --color-neu-bd: var(--neu-bd);
+  --color-neu-dot: var(--neu-dot);
+  --color-sev-critical: var(--sev-critical);
+  --color-sev-high: var(--sev-high);
+  --color-sev-medium: var(--sev-medium);
+  --color-sev-low: var(--sev-low);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.55;
+    transition: background-color 200ms, color 200ms;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  /* While the theme is switching, every surface eases between palettes. */
+  .theme-switching *,
+  .theme-switching *::before,
+  .theme-switching *::after {
+    transition-property: color, background-color, border-color, fill, stroke;
+    transition-duration: 200ms;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@keyframes ol-view {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ol-toast {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ol-bar {
+  from { width: 0; }
+  to { width: 100%; }
+}
+@keyframes ol-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
