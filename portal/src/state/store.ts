@@ -1,132 +1,117 @@
-// Client-side stand-in for the ledger API. Holds the demo dataset, persists it
-// to localStorage and syncs across tabs, so the MDA portal and the oversight
-// console can be run side by side. Every write goes through the domain rules;
-// in production these calls become API requests and the server re-checks them.
+// Client-side stand-in for the platform API. Holds the prototype dataset
+// (persisted to localStorage, synced across tabs) and a per-tab session
+// (sessionStorage). Every write goes through the service layer, which applies
+// the domain rules and appends audit events; in production these calls become
+// API requests and the server re-checks every rule.
 
 import { useSyncExternalStore } from 'react'
-import { sweepDeadlines, transition } from '../domain/flagMachine'
-import { isOversightRole } from '../domain/policy'
-import { buildFlags, buildUsers, MDAS } from '../domain/seed'
-import { createSubmission, type CreateParams, type Obligation } from '../domain/submissions/create'
-import { parseAmount } from '../domain/submissions/defs'
-import { transitionSubmission } from '../domain/submissions/machine'
-import { VENDORS } from '../domain/submissions/reference'
-import { buildSubmissions } from '../domain/submissions/seed'
-import type { Submission, SubmissionContent, SubmissionEvent } from '../domain/submissions/types'
-import type { Comment, Flag, FlagEvent, Mda, ResponseDraft, User } from '../domain/types'
+import { login as domainLogin, newMfaCode } from '../domain/access'
+import type { Dataset } from '../domain/dataset'
+import { can, inScope, type Permission } from '../domain/roles'
+import { monthOf, periodId, type PeriodScope } from '../domain/periods'
+import { buildDataset } from '../domain/seed'
+import { svcLogin, svcLoginFailed, svcSessionEnd, type Svc } from '../domain/services'
+import type { User } from '../domain/types'
 
-const KEY = 'olos.portal.v1'
-const DATA_VERSION = 2
+const DATA_KEY = 'olos.dataset'
+const DATA_VERSION = 3
+const SESSION_KEY = 'olos.session'
+const SCOPE_KEY = 'olos.scope'
+
+export interface Session {
+  userId: string
+  mfaVerified: boolean
+  startedAt: string
+  lastActivity: number
+}
+
+export interface MfaChallenge {
+  userId: string
+  code: string
+  issuedAt: number
+  attempts: number
+}
 
 export interface PortalState {
-  version: number
-  seededAt: string
-  syncedAt: string
-  users: User[]
-  mdas: Mda[]
-  flags: Flag[]
-  submissions: Submission[]
-  obligations: Obligation[]
-  sessionUserId: string | null
+  ds: Dataset
+  session: Session | null
+  challenge: MfaChallenge | null
+  scope: PeriodScope
+  /** Set when the last session ended by timeout, to explain it on the login page. */
+  expired: boolean
 }
 
-export type ActionResult = { ok: true } | { ok: false; error: string }
+export type ActionResult<T = undefined> = { ok: true; value: T; message?: string } | { ok: false; error: string }
 
-function freshState(now = new Date()): PortalState {
-  const users = buildUsers()
-  const flags = buildFlags(now, users)
-  const { submissions, obligations } = buildSubmissions(now, users, MDAS, flags)
-  return {
-    version: DATA_VERSION,
-    seededAt: now.toISOString(),
-    syncedAt: now.toISOString(),
-    users,
-    mdas: MDAS,
-    flags,
-    submissions,
-    obligations,
-    sessionUserId: null,
-  }
-}
-
-// The signed-in role is per tab (sessionStorage), so two tabs can act as two
-// officers on the same shared dataset.
-const SESSION_KEY = 'olos.session'
-
-function readSession(): string | null {
+function read<T>(storage: 'local' | 'session', k: string): T | null {
   try {
-    return sessionStorage.getItem(SESSION_KEY)
+    const raw = (storage === 'local' ? localStorage : sessionStorage).getItem(k)
+    return raw ? (JSON.parse(raw) as T) : null
   } catch {
     return null
   }
 }
 
-function writeSession(userId: string | null) {
+function write(storage: 'local' | 'session', k: string, v: unknown) {
   try {
-    if (userId) sessionStorage.setItem(SESSION_KEY, userId)
-    else sessionStorage.removeItem(SESSION_KEY)
+    const s = storage === 'local' ? localStorage : sessionStorage
+    if (v === null) s.removeItem(k)
+    else s.setItem(k, JSON.stringify(v))
   } catch {
-    /* session lasts until reload */
+    /* storage blocked: state lives in memory for this tab */
   }
 }
 
-function load(): PortalState {
-  const sessionUserId = readSession()
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as PortalState
-      if (parsed.version === DATA_VERSION) return { ...parsed, sessionUserId }
-    }
-  } catch {
-    // Storage blocked or corrupt: fall back to fresh demo data.
-  }
-  return { ...freshState(), sessionUserId }
+function loadDataset(): Dataset {
+  const saved = read<{ version: number; ds: Dataset }>('local', DATA_KEY)
+  if (saved?.version === DATA_VERSION) return saved.ds
+  return buildDataset()
 }
 
-function persist(s: PortalState) {
-  try {
-    localStorage.setItem(KEY, JSON.stringify({ ...s, sessionUserId: null }))
-  } catch {
-    // Non-fatal: the session continues in memory.
-  }
+/** Default scope: year to date, ending at the current month (capped to FY2026). */
+export function defaultScope(now = new Date()): PeriodScope {
+  const m = now.getFullYear() > 2026 ? 12 : now.getFullYear() < 2026 ? 1 : now.getMonth() + 1
+  return { mode: 'ytd', periodId: periodId(m) }
 }
 
 type Listener = () => void
 
 function createStore() {
-  let state = load()
+  let state: PortalState = {
+    ds: loadDataset(),
+    session: read<Session>('session', SESSION_KEY),
+    challenge: null,
+    scope: read<PeriodScope>('session', SCOPE_KEY) ?? defaultScope(),
+    expired: false,
+  }
   const listeners = new Set<Listener>()
-
   const emit = () => listeners.forEach((l) => l())
-  const set = (next: PortalState) => {
-    state = next
-    persist(state)
+  const setDs = (ds: Dataset) => {
+    state = { ...state, ds }
+    write('local', DATA_KEY, { version: DATA_VERSION, ds })
     emit()
   }
-  const replaceFlag = (flag: Flag) => ({ ...state, flags: state.flags.map((f) => (f.id === flag.id ? flag : f)) })
-  const me = () => state.users.find((u) => u.id === state.sessionUserId) ?? null
-
-  const sweep = () => {
-    const changed = sweepDeadlines(state.flags, new Date(), state.users)
-    const syncedAt = new Date().toISOString()
-    if (!changed.length) {
-      state = { ...state, syncedAt }
-      emit()
-      return
-    }
-    const byId = new Map(changed.map((f) => [f.id, f]))
-    set({ ...state, syncedAt, flags: state.flags.map((f) => byId.get(f.id) ?? f) })
+  const setSession = (session: Session | null) => {
+    state = { ...state, session }
+    write('session', SESSION_KEY, session)
+    emit()
+  }
+  const me = (): User | null => {
+    const s = state.session
+    if (!s || !s.mfaVerified) return null
+    const u = state.ds.users.find((x) => x.id === s.userId)
+    return u && u.status === 'Active' ? u : null
   }
 
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (e) => {
-      if (e.key !== KEY || !e.newValue) return
+      if (e.key !== DATA_KEY || !e.newValue) return
       try {
-        const next = JSON.parse(e.newValue) as PortalState
-        // Keep this tab's own sign-in; share everything else.
-        state = { ...next, sessionUserId: state.sessionUserId }
-        emit()
+        const next = JSON.parse(e.newValue) as { version: number; ds: Dataset }
+        if (next.version === DATA_VERSION) {
+          state = { ...state, ds: next.ds }
+          emit()
+        }
       } catch {
         /* ignore malformed updates */
       }
@@ -139,115 +124,122 @@ function createStore() {
       listeners.add(l)
       return () => listeners.delete(l)
     },
-    sweep,
-    signIn(userId: string) {
-      writeSession(userId)
-      state = { ...state, sessionUserId: userId }
+    me,
+
+    // ---- Authentication (FR-AUTH-001..005) --------------------------------------
+    login(email: string, password: string): ActionResult<{ mfaRequired: boolean }> {
+      const now = new Date()
+      const r = domainLogin(state.ds, email, password)
+      if (!r.ok) {
+        setDs(svcLoginFailed(state.ds, email, now))
+        return r
+      }
+      const { user, mfaRequired } = r.value
+      setDs(svcLogin(state.ds, user, now, 'LOGIN'))
+      state = { ...state, expired: false }
+      if (mfaRequired) {
+        state = { ...state, challenge: { userId: user.id, code: newMfaCode(), issuedAt: Date.now(), attempts: 0 } }
+        emit()
+      } else {
+        setDs(svcLogin(state.ds, user, now, 'MFA_VERIFIED'))
+        setSession({ userId: user.id, mfaVerified: true, startedAt: now.toISOString(), lastActivity: Date.now() })
+      }
+      return { ok: true, value: { mfaRequired } }
+    },
+    resendMfa() {
+      if (!state.challenge) return
+      state = { ...state, challenge: { ...state.challenge, code: newMfaCode(), issuedAt: Date.now(), attempts: 0 } }
       emit()
     },
-    signOut() {
-      writeSession(null)
-      state = { ...state, sessionUserId: null }
+    verifyMfa(code: string): ActionResult {
+      const c = state.challenge
+      if (!c) return { ok: false, error: 'Your sign-in expired. Start again.' }
+      if (Date.now() - c.issuedAt > 5 * 60_000) {
+        state = { ...state, challenge: null }
+        emit()
+        return { ok: false, error: 'The code expired. Sign in again.' }
+      }
+      if (code.trim() !== c.code) {
+        const attempts = c.attempts + 1
+        if (attempts >= 5) {
+          state = { ...state, challenge: null }
+          emit()
+          return { ok: false, error: 'Too many incorrect codes. Sign in again.' }
+        }
+        state = { ...state, challenge: { ...c, attempts } }
+        emit()
+        return { ok: false, error: `That code is incorrect. ${5 - attempts} attempt${5 - attempts === 1 ? '' : 's'} left.` }
+      }
+      const user = state.ds.users.find((u) => u.id === c.userId)!
+      const now = new Date()
+      setDs(svcLogin(state.ds, user, now, 'MFA_VERIFIED'))
+      state = { ...state, challenge: null }
+      setSession({ userId: user.id, mfaVerified: true, startedAt: now.toISOString(), lastActivity: Date.now() })
+      return { ok: true, value: undefined }
+    },
+    cancelMfa() {
+      state = { ...state, challenge: null }
       emit()
+    },
+    logout(expired = false) {
+      const u = me()
+      if (u) setDs(svcSessionEnd(state.ds, u, new Date(), expired))
+      state = { ...state, expired }
+      setSession(null)
+    },
+    /** Record activity for the inactivity timeout (FR-AUTH-003). */
+    touch() {
+      if (!state.session) return
+      state = { ...state, session: { ...state.session, lastActivity: Date.now() } }
+      write('session', SESSION_KEY, state.session)
+    },
+    /** Revalidate the session: expire on inactivity, end it if the account was disabled. */
+    checkSession(): 'ok' | 'warn' | 'expired' | 'none' {
+      const s = state.session
+      if (!s) return 'none'
+      const u = state.ds.users.find((x) => x.id === s.userId)
+      if (!u || u.status !== 'Active') {
+        this.logout(false)
+        return 'expired'
+      }
+      const limit = state.ds.securityConfig.sessionTimeoutMin * 60_000
+      const idle = Date.now() - s.lastActivity
+      if (idle >= limit) {
+        this.logout(true)
+        return 'expired'
+      }
+      return idle >= limit - 60_000 ? 'warn' : 'ok'
+    },
+
+    // ---- Period scope (FR-DASH-007) -------------------------------------------------
+    setScope(scope: PeriodScope) {
+      state = { ...state, scope }
+      write('session', SCOPE_KEY, scope)
+      emit()
+    },
+
+    // ---- Generic action runner -----------------------------------------------------------
+    run<T>(fn: (ds: Dataset, me: User, now: Date) => Svc<T> | { ok: false; error: string }): ActionResult<T> {
+      const u = me()
+      if (!u) return { ok: false, error: 'Your session has ended. Sign in again.' }
+      this.touch()
+      const r = fn(state.ds, u, new Date())
+      if (!r.ok) return r
+      setDs(r.ds)
+      return { ok: true, value: r.value, message: r.message }
+    },
+    /** Append-only side effects that are not actions (exports). */
+    record(fn: (ds: Dataset, me: User, now: Date) => Dataset) {
+      const u = me()
+      if (!u) return
+      setDs(fn(state.ds, u, new Date()))
     },
     reset() {
-      set({ ...freshState(), sessionUserId: state.sessionUserId })
-      sweep()
+      const ds = buildDataset()
+      write('local', DATA_KEY, { version: DATA_VERSION, ds })
+      state = { ...state, ds }
+      emit()
     },
-    dispatch(flagId: string, event: FlagEvent): ActionResult {
-      const user = me()
-      const flag = state.flags.find((f) => f.id === flagId)
-      if (!user) return { ok: false, error: 'Your session has ended. Sign in again.' }
-      if (!flag) return { ok: false, error: `Flag ${flagId} not found.` }
-      const r = transition(flag, event, { actor: user, now: new Date(), users: state.users })
-      if (!r.ok) return r
-      set(replaceFlag(r.flag))
-      return { ok: true }
-    },
-    /** Autosave a draft. Only the owner may edit, and only while drafting. */
-    saveDraft(flagId: string, patch: Partial<ResponseDraft>): ActionResult {
-      const user = me()
-      const flag = state.flags.find((f) => f.id === flagId)
-      if (!user || !flag) return { ok: false, error: 'Not available.' }
-      if (flag.state !== 'Drafting' || flag.ownerId !== user.id)
-        return { ok: false, error: 'Only the assigned owner can edit this draft.' }
-      const draft = { ...flag.draft, ...patch, updatedAt: new Date().toISOString(), updatedBy: user.id }
-      set(replaceFlag({ ...flag, draft }))
-      return { ok: true }
-    },
-    addComment(flagId: string, body: string): ActionResult {
-      const user = me()
-      const flag = state.flags.find((f) => f.id === flagId)
-      if (!user || !flag) return { ok: false, error: 'Not available.' }
-      const text = body.trim()
-      if (!text) return { ok: false, error: 'Write a message first.' }
-      const side = isOversightRole(user.role) ? 'oversight' : 'mda'
-      if (side === 'mda' && user.mdaId !== flag.mdaId) return { ok: false, error: 'You can only comment on your own MDA’s flags.' }
-      const comment = { id: crypto.randomUUID(), at: new Date().toISOString(), authorId: user.id, side, body: text } as const
-      set(replaceFlag({ ...flag, comments: [...flag.comments, comment] }))
-      return { ok: true }
-    },
-
-    // ---- Submissions -------------------------------------------------------
-
-    /** Create a pre-filled draft. Returns its id so the caller can open it. */
-    createSubmission(params: CreateParams, obligationId?: string): { ok: true; id: string } | { ok: false; error: string } {
-      const user = me()
-      if (!user?.mdaId) return { ok: false, error: 'Only MDA officers can create submissions.' }
-      const mda = state.mdas.find((m) => m.id === user.mdaId)!
-      const ob = obligationId ? state.obligations.find((o) => o.id === obligationId) : undefined
-      const r = createSubmission(params, { mda, owner: user, now: new Date(), flags: state.flags, submissions: state.submissions, dueAt: ob?.dueAt })
-      if (!r.ok) return r
-      set({
-        ...state,
-        submissions: [...state.submissions, r.submission],
-        obligations: ob ? state.obligations.map((o) => (o.id === ob.id ? { ...o, submissionId: r.submission.id } : o)) : state.obligations,
-      })
-      return { ok: true, id: r.submission.id }
-    },
-    /** Autosave. Only the preparer may edit, and only while in draft. */
-    saveSubmission(id: string, patch: Partial<SubmissionContent> & { step?: number }): ActionResult {
-      const user = me()
-      const sub = state.submissions.find((s) => s.id === id)
-      if (!user || !sub) return { ok: false, error: 'Not available.' }
-      if (sub.state !== 'Draft' || sub.ownerId !== user.id) return { ok: false, error: 'Only the preparer can edit this draft.' }
-      replaceSubmission({ ...sub, ...patch, updatedAt: new Date().toISOString(), updatedBy: user.id })
-      return { ok: true }
-    },
-    dispatchSubmission(id: string, event: SubmissionEvent): ActionResult {
-      const user = me()
-      const sub = state.submissions.find((s) => s.id === id)
-      if (!user) return { ok: false, error: 'Your session has ended. Sign in again.' }
-      if (!sub) return { ok: false, error: `Submission ${id} not found.` }
-      const r = transitionSubmission(sub, event, { actor: user, now: new Date(), users: state.users, vendors: VENDORS })
-      if (!r.ok) return r
-      // An approved release updates the MDA's released funds everywhere.
-      const approvedRelease = event.type === 'ACCEPT' && r.submission.data.kind === 'release_request' ? parseAmount(r.submission.data.amount) : 0
-      set({
-        ...state,
-        submissions: state.submissions.map((s) => (s.id === id ? r.submission : s)),
-        mdas: approvedRelease
-          ? state.mdas.map((m) => (m.id === sub.mdaId ? { ...m, released: Math.min(m.appropriated, m.released + approvedRelease) } : m))
-          : state.mdas,
-      })
-      return { ok: true }
-    },
-    addSubmissionComment(id: string, body: string): ActionResult {
-      const user = me()
-      const sub = state.submissions.find((s) => s.id === id)
-      if (!user || !sub) return { ok: false, error: 'Not available.' }
-      const text = body.trim()
-      if (!text) return { ok: false, error: 'Write a message first.' }
-      const side = isOversightRole(user.role) ? 'oversight' : 'mda'
-      if (side === 'mda' && user.mdaId !== sub.mdaId) return { ok: false, error: 'You can only comment on your own MDA’s submissions.' }
-      const comment: Comment = { id: crypto.randomUUID(), at: new Date().toISOString(), authorId: user.id, side, body: text }
-      replaceSubmission({ ...sub, comments: [...sub.comments, comment] })
-      return { ok: true }
-    },
-  }
-
-  function replaceSubmission(sub: Submission) {
-    set({ ...state, submissions: state.submissions.map((s) => (s.id === sub.id ? sub : s)) })
   }
 }
 
@@ -257,27 +249,30 @@ export function usePortal(): PortalState {
   return useSyncExternalStore(store.subscribe, store.getState)
 }
 
+export function useDs(): Dataset {
+  return usePortal().ds
+}
+
 export function useMe(): User | null {
-  const s = usePortal()
-  return s.users.find((u) => u.id === s.sessionUserId) ?? null
+  usePortal()
+  return store.me()
 }
 
-/** Flags visible to a user: their own MDA's, or all for oversight. Always a new array. */
-export function visibleFlags(s: PortalState, user: User | null): Flag[] {
-  if (!user) return []
-  return user.mdaId ? s.flags.filter((f) => f.mdaId === user.mdaId) : [...s.flags]
+export function useScope(): PeriodScope {
+  return usePortal().scope
 }
 
-/** Submissions visible to a user: their MDA's; Treasury sees release requests; the auditor sees all. */
-export function visibleSubmissions(s: PortalState, user: User | null): Submission[] {
-  if (!user) return []
-  if (user.mdaId) return s.submissions.filter((x) => x.mdaId === user.mdaId)
-  if (user.role === 'treasury') return s.submissions.filter((x) => x.kind === 'release_request')
-  return [...s.submissions]
+export const useCan = (p: Permission) => can(useMe(), p)
+
+/** MDAs the user may see (BR-010). */
+export function scopedMdaIds(ds: Dataset, user: User | null): string[] {
+  return ds.mdas.filter((m) => inScope(user, m.id)).map((m) => m.id)
 }
 
-export function userName(s: PortalState, id: string | null | undefined): string {
-  if (!id) return 'Unassigned'
+export function userName(ds: Dataset, id: string | null | undefined): string {
+  if (!id) return '—'
   if (id === 'system') return 'System'
-  return s.users.find((u) => u.id === id)?.name ?? id
+  return ds.users.find((u) => u.id === id)?.name ?? id
 }
+
+export const scopeMonth = (scope: PeriodScope) => monthOf(scope.periodId)

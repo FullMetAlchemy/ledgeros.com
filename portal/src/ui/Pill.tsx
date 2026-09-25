@@ -1,68 +1,51 @@
+import { AlertOctagon, AlertTriangle, ArrowDown, CheckCircle2, ChevronsUp, Circle, Minus, type LucideIcon } from 'lucide-react'
 import { shortDate, workingDaysBetween } from '../domain/calendar'
-import { activeDeadline, SOON_WITHIN_WORKING_DAYS } from '../domain/policy'
-import type { Flag, Rating, Severity } from '../domain/types'
-import { DEADLINE_TEXT, DOT, flagStatus, PILL, RATING_TONE, SEVERITY_BG, type Tone } from './tone'
+import type { Rating, Severity } from '../domain/types'
+import { PILL, RATING_TONE, SEVERITY_TONE, type Tone } from './tone'
 
-export function StatusPill({ tone, label, className = '' }: { tone: Tone; label: string; className?: string }) {
+/** Status pill: text + dot/icon + restrained colour. */
+export function StatusPill({ tone, label, icon: Icon, className = '' }: { tone: Tone; label: string; icon?: LucideIcon; className?: string }) {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-px text-xs font-semibold leading-5 ${PILL[tone]} ${className}`}
-    >
-      <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[tone]}`} />
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-px text-xs leading-5 font-semibold whitespace-nowrap ${PILL[tone]} ${className}`}>
+      {Icon ? <Icon size={13} aria-hidden /> : <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current opacity-80" />}
       {label}
     </span>
   )
 }
 
-export function RatingPill({ rating }: { rating: Rating }) {
-  return <StatusPill tone={RATING_TONE[rating]} label={rating} />
+const RATING_ICON: Record<Rating, LucideIcon> = { 'High Risk': AlertOctagon, Warning: AlertTriangle, Clear: CheckCircle2 }
+
+export function RiskBadge({ rating }: { rating: Rating }) {
+  return <StatusPill tone={RATING_TONE[rating]} label={rating} icon={RATING_ICON[rating]} />
 }
 
-export function FlagStatePill({ flag }: { flag: Flag }) {
-  const s = flagStatus(flag)
-  return <StatusPill tone={s.tone} label={s.label} />
-}
+const SEVERITY_ICON: Record<Severity, LucideIcon> = { Critical: ChevronsUp, High: AlertTriangle, Medium: Minus, Low: ArrowDown }
 
-/** Solid square tag, deliberately a different shape from status pills. */
-export function SeverityTag({ severity }: { severity: Severity }) {
+/** Severity: tinted, iconed and labelled; distinct but not aggressive. */
+export function SeverityBadge({ severity }: { severity: Severity }) {
+  const Icon = SEVERITY_ICON[severity]
   return (
-    <span
-      className={`inline-block whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase leading-4 tracking-wider text-white ${SEVERITY_BG[severity]}`}
-    >
+    <span className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-px text-[11px] leading-5 font-semibold whitespace-nowrap ${PILL[SEVERITY_TONE[severity]]}`}>
+      <Icon size={12} aria-hidden />
       {severity}
     </span>
   )
 }
 
-/** Deadline for anything with a due date; `open` false shows the closed label instead. */
-export function DueChip({ due, open = true, closedLabel = 'Closed', now = new Date() }: { due: string; open?: boolean; closedLabel?: string; now?: Date }) {
-  if (!open) return <span className="font-mono text-[11px] whitespace-nowrap text-muted">{closedLabel}</span>
-  const dueDate = new Date(due)
-  const days = workingDaysBetween(now, dueDate)
-  const status = now > dueDate ? 'over' : days <= SOON_WITHIN_WORKING_DAYS ? 'soon' : 'ok'
-  const text = status === 'over' ? `Overdue ${Math.max(1, -days)}d` : days === 0 ? 'Due today' : `Due ${shortDate(dueDate)}`
+/** A due date, amber when close and rose when overdue (text + icon, not colour alone). */
+export function DueChip({ due, open = true, closedLabel = '—', now = new Date() }: { due: string | null; open?: boolean; closedLabel?: string; now?: Date }) {
+  if (!due || !open) return <span className="font-mono text-[11px] whitespace-nowrap text-muted">{closedLabel}</span>
+  const d = new Date(due)
+  const days = workingDaysBetween(now, d)
+  const over = now > d
+  const soon = !over && days <= 2
   return (
-    <span className={`font-mono text-[11px] font-medium whitespace-nowrap ${DEADLINE_TEXT[status]}`} title={`Due ${dueDate.toLocaleString('en-GB')}`}>
-      {status === 'over' && <span aria-hidden>▲ </span>}
-      {text}
-    </span>
-  )
-}
-
-export function DeadlineChip({ flag, now = new Date() }: { flag: Flag; now?: Date }) {
-  const d = activeDeadline(flag, now)
-  if (!d) return <span className="font-mono text-[11px] text-muted">Closed</span>
-  const what = d.kind === 'ack' ? 'Ack' : 'Due'
-  const text =
-    d.status === 'over'
-      ? `${d.kind === 'ack' ? 'Ack overdue' : 'Overdue'} ${Math.max(1, -d.days)}d`
-      : d.days === 0
-        ? `${what} today`
-        : `${what} ${shortDate(d.due)}`
-  return (
-    <span className={`whitespace-nowrap font-mono text-[11px] font-medium ${DEADLINE_TEXT[d.status]}`} title={`${d.kind === 'ack' ? 'Acknowledge' : 'Resolve'} by ${new Date(d.due).toLocaleString('en-GB')}`}>
-      {d.status === 'over' && <span aria-hidden>▲ </span>}
-      {text}
+    <span
+      className={`inline-flex items-center gap-1 font-mono text-[11px] font-medium whitespace-nowrap ${over ? 'text-crit-fg' : soon ? 'text-warn-fg' : 'text-muted'}`}
+      title={`Due ${d.toLocaleString('en-GB')}`}
+    >
+      {over ? <AlertTriangle size={12} aria-hidden /> : <Circle size={8} aria-hidden className="fill-current opacity-60" />}
+      {over ? `Overdue ${Math.max(1, -days)}d` : days === 0 ? 'Due today' : `Due ${shortDate(d)}`}
     </span>
   )
 }

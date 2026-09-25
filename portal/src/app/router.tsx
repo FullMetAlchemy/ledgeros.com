@@ -1,38 +1,53 @@
 import { createBrowserRouter, Navigate } from 'react-router'
+import { Admin } from '../features/admin/Admin'
+import { AuditLedger } from '../features/audit/AuditLedger'
+import { ControlTower } from '../features/dashboard/ControlTower'
 import { DesignSystem } from '../features/design/DesignSystem'
-import { FlagCase } from '../features/flags/FlagCase'
-import { FlagsList } from '../features/flags/FlagsList'
-import { ComplianceHome } from '../features/home/ComplianceHome'
-import { OversightSubmissions } from '../features/oversight/OversightSubmissions'
-import { ReleaseQueue } from '../features/oversight/ReleaseQueue'
-import { ReviewQueue } from '../features/oversight/ReviewQueue'
-import { SubmissionPage } from '../features/submissions/SubmissionPage'
-import { SubmissionsHub } from '../features/submissions/SubmissionsHub'
+import { FlagPage } from '../features/flags/FlagPage'
+import { FlagsCentre } from '../features/flags/FlagsCentre'
+import { MdaHome } from '../features/home/MdaHome'
+import { MdaDirectory } from '../features/mdas/MdaDirectory'
+import { MdaWorkspace } from '../features/mdas/MdaWorkspace'
 import { ProfilePage } from '../features/profile/ProfilePage'
-import { MyTasks } from '../features/tasks/MyTasks'
+import { ReconciliationCentre } from '../features/reconciliation/ReconciliationCentre'
+import { ReconciliationPage } from '../features/reconciliation/ReconciliationPage'
+import { Reports } from '../features/reports/Reports'
+import { NewReturn } from '../features/returns/NewReturn'
+import { ReturnPage } from '../features/returns/ReturnPage'
+import { ReturnsList } from '../features/returns/ReturnsList'
 import { AppShell } from './AppShell'
-import { Landing, Only } from './Guards'
+import { Landing, Require } from './Guards'
+import { Login } from './Login'
+import { RouteError } from './RouteError'
 
 export const router = createBrowserRouter([
-  { path: '/', element: <Landing /> },
+  { path: '/login', element: <Login />, errorElement: <RouteError /> },
+  { path: '/', element: <Landing />, errorElement: <RouteError /> },
   {
     element: <AppShell />,
+    errorElement: <RouteError />,
     children: [
-      { path: '/home', element: <Only side="mda"><ComplianceHome /></Only> },
-      { path: '/tasks', element: <Only side="mda"><MyTasks /></Only> },
-      { path: '/flags', element: <Only side="mda"><FlagsList /></Only> },
-      { path: '/flags/:flagId', element: <Only side="mda"><FlagCase basePath="/flags" /></Only> },
-      { path: '/submissions', element: <Only side="mda"><SubmissionsHub /></Only> },
-      { path: '/submissions/:submissionId', element: <Only side="mda"><SubmissionPage basePath="/submissions" /></Only> },
-      { path: '/oversight/queue', element: <Only side="oversight"><ReviewQueue /></Only> },
-      { path: '/oversight/flags', element: <Only side="oversight"><FlagsList oversight /></Only> },
-      { path: '/oversight/flags/:flagId', element: <Only side="oversight"><FlagCase basePath="/oversight/flags" /></Only> },
-      { path: '/oversight/submissions', element: <Only side="oversight"><OversightSubmissions /></Only> },
-      { path: '/oversight/submissions/:submissionId', element: <Only side="oversight"><SubmissionPage basePath="/oversight/submissions" /></Only> },
-      { path: '/oversight/releases', element: <Only side="oversight"><ReleaseQueue /></Only> },
-      { path: '/oversight/releases/:submissionId', element: <Only side="oversight"><SubmissionPage basePath="/oversight/releases" /></Only> },
-      { path: '/profile', element: <ProfilePage /> },
-      { path: '/design', element: <DesignSystem /> },
+      {
+        errorElement: <RouteError />,
+        children: [
+          { path: '/dashboard', element: <Require permission="dashboard.view"><ControlTower /></Require> },
+          { path: '/home', element: <Require permission="return.prepare"><MdaHome /></Require> },
+          { path: '/mdas', element: <Require permission="mda.view"><MdaDirectory /></Require> },
+          { path: '/mdas/:mdaId', element: <Require permission="mda.view"><MdaWorkspace /></Require> },
+          { path: '/returns', element: <Require permission="return.view"><ReturnsList /></Require> },
+          { path: '/returns/new', element: <Require permission="return.prepare"><NewReturn /></Require> },
+          { path: '/returns/:returnId', element: <Require permission="return.view"><ReturnPage /></Require> },
+          { path: '/flags', element: <Require permission="flag.view"><FlagsCentre /></Require> },
+          { path: '/flags/:flagId', element: <Require permission="flag.view"><FlagPage /></Require> },
+          { path: '/reconciliation', element: <Require permission="rec.view"><ReconciliationCentre /></Require> },
+          { path: '/reconciliation/:recId', element: <Require permission="rec.view"><ReconciliationPage /></Require> },
+          { path: '/audit', element: <Require permission="audit.view"><AuditLedger /></Require> },
+          { path: '/reports', element: <Require permission="report.view"><Reports /></Require> },
+          { path: '/admin/:tab?', element: <Require permission="admin.users"><Admin /></Require> },
+          { path: '/profile', element: <ProfilePage /> },
+          { path: '/design', element: <DesignSystem /> },
+        ],
+      },
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },

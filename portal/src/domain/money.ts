@@ -16,6 +16,11 @@ export function nairaExact(v: number): string {
   return `${sign}₦${Math.abs(v).toLocaleString('en-NG', { maximumFractionDigits: 2 })}`
 }
 
+/** A rate already in percent (0–100+), or "—" when not calculable. */
+export function pctText(rate: number | null, digits = 1): string {
+  return rate === null || !Number.isFinite(rate) ? '—' : `${rate.toFixed(digits)}%`
+}
+
 export function pct(part: number, whole: number, digits = 1): string {
   if (!whole) return '0%'
   return `${((part / whole) * 100).toFixed(digits)}%`

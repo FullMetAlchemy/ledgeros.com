@@ -73,8 +73,9 @@
   --sev-low: #64748b; /* slate-500 */
 
   /* Chart series (validated with the dataviz palette checker, light surface) */
-  --chart-1: #6366f1;
-  --chart-2: #0d9488;
+  --chart-neutral: #94a3b8; /* slate-400: plan/expected series */
+  --chart-accent: #4f46e5; /* indigo-600: the one restrained accent */
+  --chart-ref: #475569; /* slate-600: reference lines */
 }
 
 .dark {
@@ -130,8 +131,9 @@
   --sev-low: #64748b;
 
   /* Chart series, stepped for the dark surface (validated separately) */
-  --chart-1: #7c83f3;
-  --chart-2: #0fa596;
+  --chart-neutral: #64748b;
+  --chart-accent: #7c83f3;
+  --chart-ref: #94a3b8;
 }
 
 @theme inline {
@@ -186,8 +188,9 @@
   --color-sev-high: var(--sev-high);
   --color-sev-medium: var(--sev-medium);
   --color-sev-low: var(--sev-low);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
+  --color-chart-neutral: var(--chart-neutral);
+  --color-chart-accent: var(--chart-accent);
+  --color-chart-ref: var(--chart-ref);
 }
 
 @layer base {

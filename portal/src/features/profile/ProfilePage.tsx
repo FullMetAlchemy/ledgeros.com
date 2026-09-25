@@ -1,11 +1,10 @@
 import { BellRing, KeyRound, Lock, Mail, ShieldCheck, UserRound } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { ThemeToggle } from '../../app/ThemeToggle'
-import { chainFor, ROLE_LABEL, rolesForStep, STEP_LABEL } from '../../domain/policy'
-import { DEFS } from '../../domain/submissions/defs'
-import type { SubmissionKind } from '../../domain/submissions/types'
-import type { RoleId, Severity } from '../../domain/types'
-import { useMe, usePortal } from '../../state/store'
+import { dateTime } from '../../domain/calendar'
+import { permissionsOf, ROLE_LABEL, ROLE_SCOPE, type Permission } from '../../domain/roles'
+import type { RoleId } from '../../domain/types'
+import { useDs, useMe } from '../../state/store'
 import { PageHeader, Panel } from '../../ui/Panel'
 
 type Prefs = { email: boolean; sms: boolean; digest: boolean }
@@ -20,31 +19,36 @@ function readPrefs(userId: string): Prefs {
   }
 }
 
-/** What a role can do, derived from the same policy tables the state machines enforce. */
-function capabilities(role: RoleId): string[] {
-  const out: string[] = []
-  if (role === 'auditor') return ['Accept, query or reject attested flag responses', 'Accept or query returns, retirements, certificates, quarterly reports and vendor exceptions', 'Reopen resolved flags']
-  if (role === 'treasury') return ['Approve or query release (warrant) requests', 'See each MDA’s live rating and open flags beside every request']
-  if (role === 'dfa' || role === 'accounting_officer') out.push('Acknowledge flags and assign owners')
-  for (const sev of ['Critical', 'Medium'] as Severity[]) {
-    const steps = chainFor(sev)
-    steps.forEach((step, i) => {
-      const final = i === steps.length - 1
-      if (rolesForStep(step, final).includes(role)) out.push(`${final ? 'Attest' : STEP_LABEL[step]} ${sev === 'Critical' ? 'Critical/High' : 'Medium/Low'} flag responses`)
-    })
-  }
-  const prepares = (Object.keys(DEFS) as SubmissionKind[]).filter((k) => DEFS[k].preparers.includes(role))
-  if (prepares.length) out.push(`Prepare: ${prepares.map((k) => DEFS[k].short.toLowerCase()).join(', ')}`)
-  for (const k of Object.keys(DEFS) as SubmissionKind[]) {
-    const chain = DEFS[k].chain
-    chain.forEach((step, i) => {
-      if (i === 0) return
-      const final = i === chain.length - 1
-      if (rolesForStep(step, final).includes(role)) out.push(`${final ? 'Attest' : STEP_LABEL[step]} ${DEFS[k].short.toLowerCase()} submissions`)
-    })
-  }
-  return [...new Set(out)]
+const CAPABILITY: Record<Permission, string> = {
+  'dashboard.view': 'View the state-wide control tower',
+  'mda.view': 'View MDA financial positions',
+  'mda.manage': 'Edit MDA master data',
+  'return.view': 'View expenditure returns',
+  'return.prepare': 'Prepare and submit expenditure returns',
+  'return.approve': 'Approve returns before they leave the MDA',
+  'return.review': 'Accept, return or close expenditure returns',
+  'flag.view': 'View compliance flags',
+  'flag.open': 'Open detected flags for MDA response',
+  'flag.assign': 'Assign flags within the MDA',
+  'flag.respond': 'Respond to flags with explanation and evidence',
+  'flag.approveResponse': 'Approve MDA flag responses before submission',
+  'flag.review': 'Review MDA responses: resolve, reject or return',
+  'flag.escalate': 'Escalate overdue or unresolved flags',
+  'flag.close': 'Close resolved or rejected flags',
+  'flag.comment': 'Comment on flag cases',
+  'rec.view': 'View reconciliations',
+  'rec.manage': 'Run and review reconciliations',
+  'rules.run': 'Run the anomaly rules',
+  'audit.view': 'View and verify the audit ledger',
+  'report.view': 'View reports',
+  'report.export': 'Export reports to CSV',
+  'admin.users': 'Manage user accounts and access',
+  'admin.config': 'Change anomaly thresholds and security settings',
+  'admin.masterData': 'Open and close financial periods',
 }
+
+/** What a role can do, from the same permission matrix every action checks. */
+const capabilities = (role: RoleId) => permissionsOf(role).map((p) => CAPABILITY[p])
 
 function Row({ icon, label, children }: { icon: ReactNode; label: string; children: ReactNode }) {
   return (
@@ -88,9 +92,9 @@ function Toggle({ id, label, help, checked, locked, onChange }: { id: string; la
 }
 
 export function ProfilePage() {
-  const s = usePortal()
+  const ds = useDs()
   const me = useMe()!
-  const mda = me.mdaId ? s.mdas.find((m) => m.id === me.mdaId) : null
+  const mda = me.mdaId ? ds.mdas.find((m) => m.id === me.mdaId) : null
   const [prefs, setPrefs] = useState<Prefs>(() => readPrefs(me.id))
   const setPref = (k: keyof Prefs, v: boolean) => {
     const next = { ...prefs, [k]: v }
@@ -101,9 +105,8 @@ export function ProfilePage() {
       /* preference lasts for this session */
     }
   }
-  const domain = mda ? `${mda.acronym.toLowerCase()}.gov.ng` : 'oagf.gov.ng'
-  const email = `${me.name.toLowerCase().replace(/[^a-z ]/g, '').split(' ').join('.')}@${domain}`
-  const leads = me.role === 'dfa' || me.role === 'accounting_officer'
+  const leads = me.role === 'executive' || me.role === 'oversight' || me.role === 'mda_supervisor'
+  const mfa = ds.securityConfig.mfaRoles.includes(me.role)
 
   return (
     <>
@@ -127,17 +130,18 @@ export function ProfilePage() {
             {me.name}
           </Row>
           <Row icon={<Mail size={16} />} label="Official email">
-            <span className="font-mono text-[13px]">{email}</span>
+            <span className="font-mono text-[13px]">{me.email}</span>
           </Row>
-          <Row icon={<ShieldCheck size={16} />} label={mda ? 'MDA' : 'Office'}>
-            {mda ? `${mda.name} (${mda.code})` : me.role === 'treasury' ? 'Office of the Accountant-General · Treasury' : 'Oversight · Office of the Auditor-General'}
+          <Row icon={<ShieldCheck size={16} />} label="Data scope">
+            {mda ? `${mda.name} (${mda.code})` : me.role === 'admin' ? 'System configuration (no financial data)' : `${ROLE_SCOPE[me.role]} · State Ministry of Budget and Economic Planning`}
           </Row>
-          <Row icon={<KeyRound size={16} />} label="Security key">
-            {me.role === 'finance_officer' || me.role === 'head_ia' ? 'Passkey for sign-in. A hardware key is only required at attestation steps.' : 'Hardware key registered · required for attestation (simulated in this demo)'}
+          <Row icon={<KeyRound size={16} />} label="Sign-in security">
+            {mfa ? 'Password and multi-factor authentication (simulated authenticator in this prototype)' : 'Password (MFA not required for this role)'}
+            {me.lastLoginAt && <span className="block text-xs text-muted">Last verified sign-in {dateTime(me.lastLoginAt)}</span>}
           </Row>
         </Panel>
 
-        <Panel title="What your role can do" aside="From the portal’s sign-off rules">
+        <Panel title="What your role can do" aside="From the role permission matrix">
           <ul className="flex flex-col gap-2">
             {capabilities(me.role).map((c) => (
               <li key={c} className="flex gap-2.5 text-[13px] text-ink-2">
@@ -146,11 +150,11 @@ export function ProfilePage() {
               </li>
             ))}
           </ul>
-          <p className="mt-3 border-t border-line pt-3 text-xs text-muted">Segregation of duties applies: you can never act at two steps of the same record.</p>
+          <p className="mt-3 border-t border-line pt-3 text-xs text-muted">Access changes are made by a System Administrator and recorded in the audit ledger.</p>
         </Panel>
 
         <Panel title="Notifications" aside={<BellRing size={14} aria-hidden />}>
-          <Toggle id="pref-statutory" label="Statutory deadline alerts" help="Flags, returns and escalations. Always on." checked locked />
+          <Toggle id="pref-statutory" label="Statutory deadline alerts" help="Flags, returns and escalations in the portal. Always on." checked locked />
           <Toggle id="pref-email" label="Email" help="Send alerts to your official email." checked={prefs.email} onChange={(v) => setPref('email', v)} />
           <Toggle id="pref-sms" label="SMS for Critical flags" help="Only Critical items, to avoid alert fatigue." checked={prefs.sms} onChange={(v) => setPref('sms', v)} />
           <Toggle

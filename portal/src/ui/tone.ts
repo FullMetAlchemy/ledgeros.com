@@ -1,10 +1,8 @@
-// Semantic tone mapping. Four scales stay separate (see spec §3):
-//   entity rating · flag severity · workflow status · deadline.
-// Red (crit) is reserved for Critical, High Risk, Overdue and Escalated.
-// Workflow states use blue/grey; green only once oversight has accepted.
+// Semantic tone mapping (FRD §17, UI-004). Rose, amber and emerald are
+// semantic signals only; workflow states use neutral/indigo so being in a
+// process never looks like being in trouble.
 
-import { currentStep, STEP_LABEL, type DeadlineStatus } from '../domain/policy'
-import type { Flag, Rating, Severity } from '../domain/types'
+import type { FlagStatus, Rating, RecStatus, ReturnStatus, Severity, UserStatus } from '../domain/types'
 
 export type Tone = 'crit' | 'warn' | 'ok' | 'flow' | 'neu'
 
@@ -16,14 +14,7 @@ export const PILL: Record<Tone, string> = {
   neu: 'text-neu-fg bg-neu-bg border-neu-bd',
 }
 
-export const DOT: Record<Tone, string> = {
-  crit: 'bg-crit-dot',
-  warn: 'bg-warn-dot',
-  ok: 'bg-ok-dot',
-  flow: 'bg-flow-dot',
-  neu: 'bg-neu-dot',
-}
-
+/** Banner surfaces: tinted but light, so status reads without an alarm-heavy block. */
 export const PANEL: Record<Tone, string> = {
   crit: 'border-crit-bd bg-crit-bg',
   warn: 'border-warn-bd bg-warn-bg',
@@ -42,40 +33,36 @@ export const TEXT: Record<Tone, string> = {
 
 export const RATING_TONE: Record<Rating, Tone> = { 'High Risk': 'crit', Warning: 'warn', Clear: 'ok' }
 
-export const SEVERITY_BG: Record<Severity, string> = {
-  Critical: 'bg-sev-critical',
-  High: 'bg-sev-high',
-  Medium: 'bg-sev-medium',
-  Low: 'bg-sev-low',
+export const SEVERITY_TONE: Record<Severity, Tone> = { Critical: 'crit', High: 'crit', Medium: 'warn', Low: 'neu' }
+
+export const FLAG_TONE: Record<FlagStatus, Tone> = {
+  Detected: 'neu',
+  Open: 'flow',
+  Assigned: 'flow',
+  'MDA Response': 'flow',
+  'Under Review': 'flow',
+  Resolved: 'ok',
+  Rejected: 'warn',
+  Escalated: 'crit',
+  Closed: 'neu',
 }
 
-export const DEADLINE_TEXT: Record<DeadlineStatus, string> = {
-  ok: 'text-muted',
-  soon: 'text-warn-fg',
-  over: 'text-crit-fg',
+export const RETURN_TONE: Record<ReturnStatus, Tone> = {
+  Draft: 'neu',
+  Submitted: 'flow',
+  'Under Review': 'flow',
+  Returned: 'warn',
+  Accepted: 'ok',
+  Closed: 'neu',
 }
 
-export function flagStatus(flag: Flag): { label: string; tone: Tone } {
-  switch (flag.state) {
-    case 'Raised':
-      return { label: 'Raised', tone: 'neu' }
-    case 'Acknowledged':
-      return { label: 'Acknowledged', tone: 'neu' }
-    case 'Drafting':
-      return flag.returned ? { label: 'Returned', tone: 'flow' } : { label: 'Drafting', tone: 'neu' }
-    case 'InChain': {
-      const step = currentStep(flag)
-      return { label: step ? `${STEP_LABEL[step]} pending` : 'In review', tone: 'flow' }
-    }
-    case 'OversightReview':
-      return { label: 'With oversight', tone: 'flow' }
-    case 'InfoRequested':
-      return { label: 'Info requested', tone: 'flow' }
-    case 'Resolved':
-      return { label: 'Accepted', tone: 'ok' }
-    case 'Escalated':
-      return { label: 'Escalated', tone: 'crit' }
-    case 'Reopened':
-      return { label: 'Reopened', tone: 'flow' }
-  }
+export const REC_TONE: Record<RecStatus, Tone> = {
+  Open: 'neu',
+  'In Progress': 'flow',
+  Matched: 'ok',
+  Variance: 'warn',
+  Reviewed: 'flow',
+  Closed: 'neu',
 }
+
+export const USER_TONE: Record<UserStatus, Tone> = { Pending: 'flow', Active: 'ok', Suspended: 'warn', Disabled: 'neu' }

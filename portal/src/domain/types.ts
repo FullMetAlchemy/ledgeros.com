@@ -1,78 +1,115 @@
-// Shared domain model for the MDA portal and the oversight console.
+// Oversight Ledger OS domain model (PRD §13, FRD §8).
+// Pure data types; no React. Every monetary value is in naira.
 
-export type Severity = 'Critical' | 'High' | 'Medium' | 'Low'
-export type Rating = 'High Risk' | 'Warning' | 'Clear'
-
-export type RoleId =
-  | 'finance_officer'
-  | 'dfa'
-  | 'head_ia'
-  | 'accounting_officer'
-  | 'auditor'
-  | 'treasury'
-
-/** A step in the MDA's internal sign-off chain. */
-export type ChainStep = 'prepare' | 'review' | 'check' | 'attest'
+export type RoleId = 'executive' | 'oversight' | 'mda_officer' | 'mda_supervisor' | 'auditor' | 'admin'
+export type UserStatus = 'Pending' | 'Active' | 'Suspended' | 'Disabled'
 
 export interface User {
   id: string
   name: string
   initials: string
+  email: string
   role: RoleId
-  /** null for oversight-side users, who can see every MDA. */
+  /** MDA scope for MDA roles; null = state-wide (or system for admin). */
   mdaId: string | null
   title: string
+  status: UserStatus
+  createdAt: string
+  lastLoginAt: string | null
 }
 
-export interface Transaction {
-  ref: string
-  date: string
-  payee: string
-  amount: number
-}
+export type Severity = 'Low' | 'Medium' | 'High' | 'Critical'
+export type Rating = 'High Risk' | 'Warning' | 'Clear'
 
-export interface ReleaseRequest {
-  ref: string
-  vote: string
-  amount: number
-  requested: string
-}
+// ---- Master data --------------------------------------------------------------
 
 export interface Mda {
   id: string
   code: string
   acronym: string
   name: string
-  appropriated: number
-  released: number
-  utilized: number
-  unretired: number
-  transactions: Transaction[]
-  releaseRequests: ReleaseRequest[]
+  sector: string
+  accountingOfficer: string
+  contactEmail: string
+  status: 'Active' | 'Inactive'
+  /** Approved allocation (appropriation) for FY2026. */
+  appropriation: number
 }
 
-export type FlagType =
-  | 'velocity'
-  | 'milestone_mismatch'
-  | 'unretired_advance'
-  | 'capital_vote_depleted'
-  | 'duplicate_invoicing'
-  | 'procurement_breach'
-  | 'threshold_splitting'
-  | 'low_absorption'
+export type PeriodStatus = 'Future' | 'Open' | 'Closed'
 
-export type FlagState =
-  | 'Raised'
-  | 'Acknowledged'
-  | 'Drafting'
-  | 'InChain'
-  | 'OversightReview'
-  | 'InfoRequested'
-  | 'Resolved'
-  | 'Escalated'
-  | 'Reopened'
+export interface FinancialPeriod {
+  /** YYYY-MM */
+  id: string
+  label: string
+  year: number
+  month: number
+  quarter: number
+  status: PeriodStatus
+}
 
-export type ResponseType = 'justify' | 'correct' | 'dispute' | 'extension'
+export interface EconomicCode {
+  code: string
+  label: string
+  category: 'Personnel' | 'Overhead' | 'Capital'
+}
+
+// ---- Financial records ------------------------------------------------------------
+
+export interface FundRelease {
+  id: string
+  mdaId: string
+  periodId: string
+  amount: number
+  reference: string
+}
+
+/** Pre-system monthly expenditure carried from the (mock) GIFMIS ledger for closed months. */
+export interface LedgerExpenditure {
+  mdaId: string
+  periodId: string
+  amount: number
+  source: string
+}
+
+export interface RevenueRecord {
+  id: string
+  periodId: string
+  source: string
+  expected: number
+  collected: number
+}
+
+export interface Advance {
+  id: string
+  mdaId: string
+  holder: string
+  amount: number
+  disbursedOn: string
+  retiredOn: string | null
+}
+
+export interface Vendor {
+  id: string
+  name: string
+  tin: string
+  category: string
+}
+
+export interface Project {
+  id: string
+  mdaId: string
+  name: string
+  vendorId: string
+  contractValue: number
+  paidToDate: number
+  /** Documented physical completion, 0–100. */
+  completionPct: number
+  lastInspection: string
+  paymentRefs: string[]
+}
+
+// ---- Evidence ---------------------------------------------------------------------
 
 export interface EvidenceFile {
   id: string
@@ -80,100 +117,219 @@ export interface EvidenceFile {
   name: string
   size: number
   mime: string
-  /** SHA-256 of the file bytes, hex encoded. Computed in the browser at upload. */
   sha256: string
   uploadedBy: string
   uploadedAt: string
-}
-
-export interface ResponseDraft {
-  type: ResponseType | null
-  answers: Record<string, string>
-  narrative: string
-  evidence: EvidenceFile[]
-  correctiveRef: string
-  extensionDate: string
-  /** Written justifications for "needs justification" issues, keyed by issue id. */
-  justifications: Record<string, string>
-  /** Wizard step to resume at. */
-  step: number
-  updatedAt: string | null
-  updatedBy: string | null
-}
-
-export interface ChainAct {
-  step: ChainStep
-  userId: string
-  at: string
-}
-
-export interface Attestation {
-  userId: string
-  at: string
-  declaration: string
-  keyVerified: boolean
-}
-
-export type EscalationReason = 'ack_overdue' | 'resolve_overdue' | 'rejected'
-
-export interface HistoryEntry {
-  id: string
-  at: string
-  actorId: string
-  event: FlagEvent['type']
-  from: FlagState
-  to: FlagState
-  note?: string
 }
 
 export interface Comment {
   id: string
   at: string
   authorId: string
-  side: 'mda' | 'oversight'
   body: string
+}
+
+// ---- Expenditure returns (FRD §4.4, §8) -------------------------------------------
+
+export type ReturnStatus = 'Draft' | 'Submitted' | 'Under Review' | 'Returned' | 'Accepted' | 'Closed'
+
+export interface Transaction {
+  id: string
+  date: string // YYYY-MM-DD
+  reference: string
+  vendorName: string
+  vendorTin: string
+  description: string
+  economicCode: string
+  projectId: string
+  amount: number
+  /** Where the line came from. */
+  source: 'Manual' | 'CSV import' | 'Mock GIFMIS'
+}
+
+export interface ReturnVersion {
+  version: number
+  submittedAt: string
+  submittedBy: string
+  total: number
+  transactions: Transaction[]
+  outcome: string
+}
+
+export interface ExpenditureReturn {
+  id: string
+  mdaId: string
+  periodId: string
+  status: ReturnStatus
+  version: number
+  transactions: Transaction[]
+  tsaClosingBalance: string
+  evidence: EvidenceFile[]
+  notes: string
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  submittedBy: string | null
+  submittedAt: string | null
+  /** Earlier submitted versions, preserved on correction (FR-EXP-007, BR-007). */
+  versions: ReturnVersion[]
+  comments: Comment[]
+}
+
+// ---- Compliance flags (FRD §4.6–4.7, §8) --------------------------------------------
+
+export type RuleId = 'overspend' | 'velocity' | 'milestone' | 'duplication'
+
+export type FlagStatus =
+  | 'Detected'
+  | 'Open'
+  | 'Assigned'
+  | 'MDA Response'
+  | 'Under Review'
+  | 'Resolved'
+  | 'Rejected'
+  | 'Escalated'
+  | 'Closed'
+
+export interface FlagRecordRef {
+  type: 'transaction' | 'project' | 'return' | 'mda'
+  id: string
+  label: string
+  amount?: number
+}
+
+export interface FlagEvidence {
+  /** Observed values, e.g. allocation / utilization / variance. */
+  metrics: { label: string; value: string }[]
+  threshold: string
+  observation: string
+  records: FlagRecordRef[]
+}
+
+export interface FlagResponse {
+  id: string
+  explanation: string
+  correctiveAction: string
+  evidence: EvidenceFile[]
+  submittedBy: string
+  submittedAt: string
+  supervisorDecision: { by: string; at: string; approved: boolean; note: string } | null
+  review: { by: string; at: string; outcome: 'accept' | 'reject' | 'return' | 'escalate'; note: string } | null
+}
+
+export interface FlagHistoryEntry {
+  id: string
+  at: string
+  actorId: string
+  from: FlagStatus | null
+  to: FlagStatus
+  note?: string
 }
 
 export interface Flag {
   id: string
+  ruleId: RuleId
+  /** Rule + subject; prevents identical repeated flags (BR-006). */
+  dedupeKey: string
   mdaId: string
-  type: FlagType
+  periodId: string
   severity: Severity
-  description: string
-  observed: string
-  threshold: string
-  relatedRefs: string[]
-  state: FlagState
-  raisedAt: string
-  ackDueAt: string
-  resolveDueAt: string
-  ownerId: string | null
-  draft: ResponseDraft
-  /** Snapshot of the draft taken on submit; this is what the chain signs. */
-  submitted: ResponseDraft | null
-  chain: ChainAct[]
-  attestation: Attestation | null
-  /** True after a reviewer sends the response back; cleared on resubmit. */
-  returned: boolean
-  extensionUsed: boolean
-  escalations: EscalationReason[]
-  /** Response cycle; increments whenever drafting restarts after a submission. */
-  cycle: number
-  history: HistoryEntry[]
+  title: string
+  amount: number
+  detectedAt: string
+  evidence: FlagEvidence
+  status: FlagStatus
+  reviewerId: string | null
+  assigneeId: string | null
+  dueAt: string | null
+  /** Draft response being prepared by the MDA (not yet submitted). */
+  draft: { explanation: string; correctiveAction: string; evidence: EvidenceFile[] }
+  responses: FlagResponse[]
+  history: FlagHistoryEntry[]
   comments: Comment[]
+  closedOutcome: 'Resolved' | 'Rejected' | null
 }
 
-export type FlagEvent =
-  | { type: 'ACKNOWLEDGE' }
-  | { type: 'ASSIGN'; ownerId: string }
-  | { type: 'SUBMIT' }
-  | { type: 'APPROVE_STEP'; attestation?: { declaration: string; keyVerified: boolean } }
-  | { type: 'RETURN'; comment: string }
-  | { type: 'ACCEPT'; comment?: string }
-  | { type: 'REQUEST_INFO'; comment: string }
-  | { type: 'REJECT'; comment: string }
-  | { type: 'RESUME' }
-  | { type: 'REOPEN'; comment: string }
-  | { type: 'ESCALATE'; reason: Exclude<EscalationReason, 'rejected'> }
+// ---- Reconciliation (FRD §4.5) ------------------------------------------------------
 
-export type Actor = User | 'system'
+export type RecStatus = 'Open' | 'In Progress' | 'Matched' | 'Variance' | 'Reviewed' | 'Closed'
+export type RecType = 'TSA' | 'Vendor'
+export type RecLineStatus = 'Matched' | 'System only' | 'External only' | 'Amount differs'
+
+export interface RecLine {
+  id: string
+  reference: string
+  vendor: string
+  systemAmount: number | null
+  externalAmount: number | null
+  status: RecLineStatus
+  explanation: string
+}
+
+export interface TsaLine {
+  reference: string
+  date: string
+  payee: string
+  amount: number
+}
+
+export interface Reconciliation {
+  id: string
+  type: RecType
+  mdaId: string
+  periodId: string
+  status: RecStatus
+  systemValue: number
+  externalValue: number
+  lines: RecLine[]
+  reviewNote: string
+  createdBy: string
+  createdAt: string
+  history: { id: string; at: string; actorId: string; from: RecStatus | null; to: RecStatus; note?: string }[]
+}
+
+// ---- Audit ledger (FRD §4.8, §14) ---------------------------------------------------
+
+export type AuditEntity = 'Session' | 'User' | 'Return' | 'Flag' | 'Reconciliation' | 'Config' | 'Period' | 'MDA' | 'Report' | 'Rules'
+
+export interface AuditEvent {
+  id: string
+  seq: number
+  at: string
+  actorId: string
+  action: string
+  entityType: AuditEntity
+  entityId: string
+  mdaId: string | null
+  summary: string
+  before?: Record<string, unknown>
+  after?: Record<string, unknown>
+  /** For correction/reversal events: the event being corrected (BR-007). */
+  correctsEventId?: string
+  source: 'Portal' | 'Rule engine' | 'Mock GIFMIS' | 'Mock TSA' | 'Prototype auth'
+  /** Chained checksum of the previous event (demonstration only, not cryptographic). */
+  prevHash: string
+  hash: string
+}
+
+// ---- Configuration (FRD §4.10) ------------------------------------------------------
+
+export interface RuleConfig {
+  overspend: { enabled: boolean; criticalAbovePct: number }
+  velocity: { enabled: boolean; paceMultiple: number; minUtilizationPct: number }
+  milestone: { enabled: boolean; tolerancePts: number }
+  duplication: {
+    enabled: boolean
+    matchVendor: boolean
+    matchAmount: boolean
+    amountTolerancePct: number
+    samePeriod: boolean
+    matchService: boolean
+  }
+  responseSlaDays: Record<Severity, number>
+}
+
+export interface SecurityConfig {
+  sessionTimeoutMin: number
+  mfaRoles: RoleId[]
+}

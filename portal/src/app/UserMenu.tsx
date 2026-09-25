@@ -1,7 +1,7 @@
-import { ChevronDown, LogOut, Palette, RefreshCw, UserRound } from 'lucide-react'
+import { ChevronDown, LogOut, Palette, UserRound } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router'
-import { ROLE_LABEL } from '../domain/policy'
+import { ROLE_LABEL } from '../domain/roles'
 import type { User } from '../domain/types'
 import { store } from '../state/store'
 
@@ -28,8 +28,8 @@ export function UserMenu({ me, mdaName }: { me: User; mdaName?: string }) {
   const item = 'flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[13px] text-ink-2 transition-colors duration-200 hover:bg-sunk hover:text-ink'
   const signOut = () => {
     setOpen(false)
-    store.signOut()
-    navigate('/')
+    store.logout()
+    navigate('/login')
   }
 
   return (
@@ -63,9 +63,6 @@ export function UserMenu({ me, mdaName }: { me: User; mdaName?: string }) {
             <Link role="menuitem" to="/design" className={item} onClick={() => setOpen(false)}>
               <Palette size={16} aria-hidden /> Design system
             </Link>
-            <button role="menuitem" type="button" className={item} onClick={signOut}>
-              <RefreshCw size={16} aria-hidden /> Switch role
-            </button>
             <button role="menuitem" type="button" className={`${item} text-crit-fg hover:text-crit-fg`} onClick={signOut}>
               <LogOut size={16} aria-hidden /> Sign out
             </button>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { dateTime } from '../domain/calendar'
+import { isMdaRole } from '../domain/roles'
 import type { Comment, User } from '../domain/types'
 import { Button } from '../ui/Button'
 import { TextArea } from '../ui/Field'
@@ -24,16 +25,17 @@ export function CaseThread({
       <ul className="flex flex-col gap-2.5">
         {flag.comments.map((c) => {
           const u = who(c.authorId)
+          const oversight = !!u && !isMdaRole(u.role)
           return (
             <li
               key={c.id}
-              className={`rounded-lg border px-3.5 py-2.5 ${c.side === 'oversight' ? 'border-flow-bd bg-flow-bg' : 'border-line bg-sunk'}`}
+              className={`rounded-lg border px-3.5 py-2.5 ${oversight ? 'border-flow-bd bg-flow-bg' : 'border-line bg-sunk'}`}
             >
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-[13px] font-semibold">
                   {u?.name ?? c.authorId}
                   <span className="ml-1.5 font-mono text-[10.5px] font-medium text-muted uppercase">
-                    {c.side === 'oversight' ? 'Oversight' : u?.title}
+                    {oversight ? 'Oversight' : u?.title}
                   </span>
                 </span>
                 <span className="font-mono text-[11px] text-muted">{dateTime(c.at)}</span>

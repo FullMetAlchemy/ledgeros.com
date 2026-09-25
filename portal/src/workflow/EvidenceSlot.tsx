@@ -1,8 +1,13 @@
 import { useId, useState, type DragEvent } from 'react'
 import { dateTime } from '../domain/calendar'
-import type { EvidenceSlotDef } from '../domain/templates'
 import type { EvidenceFile } from '../domain/types'
 import { ACCEPTED_TYPES as ACCEPTED, fileSize as size, MAX_FILE_BYTES, sha256Hex } from './evidence'
+
+export interface EvidenceSlotDef {
+  id: string
+  label: string
+  help: string
+}
 
 /**
  * A typed evidence slot. Files are fingerprinted (SHA-256) in the browser as they
